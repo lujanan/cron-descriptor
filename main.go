@@ -22,4 +22,22 @@ func main() {
 	//fmt.Println(sList)
 	//fmt.Println(fmt.Sprintf("zxc %s asd", ""))
 
+	m := &my{}
+	Get(m)
+
+}
+
+func Get(m myinter) {
+	fmt.Println("name:", m.Getname())
+}
+
+type myinter interface {
+	Getname() string
+}
+
+type my struct {
+}
+
+func (self *my) Getname() string {
+	return "your name"
 }

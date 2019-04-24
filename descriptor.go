@@ -86,7 +86,6 @@ func getFullDescription(entity *cronEntity) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	//fmt.Println("timeSegment:", timeSegment)
 
 	dayOfMonthDesc := getDayOfMonthDescription(entity)
 	//fmt.Println("dayOfMonthDesc:", dayOfMonthDesc)

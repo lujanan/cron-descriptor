@@ -9,4 +9,3 @@ type cronEntity struct {
 	DayOfWeek  string `json:"dayOfWeek"`
 	Year       string `json:"year"`
 }
-
