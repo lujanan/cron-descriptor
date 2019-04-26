@@ -36,13 +36,13 @@ var (
 	}
 )
 
-func parse(expression string, options *Options) (*cronEntity, error) {
+func parse(desc *descriptor) (*cronEntity, error) {
 	entity := &cronEntity{}
-	if expression == "" {
+	if desc.Expression == "" {
 		return nil, errors.New("expression is empty")
 	}
 
-	expressionPartsTemp := strings.Split(expression, " ")
+	expressionPartsTemp := strings.Split(desc.Expression, " ")
 	expressionPartsTempLength := len(expressionPartsTemp)
 	if expressionPartsTempLength < 5 {
 		return nil, errors.New("expression part less than 5")
@@ -97,10 +97,10 @@ func parse(expression string, options *Options) (*cronEntity, error) {
 		return nil, errors.New("expression part more than 7")
 	}
 
-	return normalizeExpression(entity, options), nil
+	return normalizeExpression(entity, desc.Options), nil
 }
 
-func normalizeExpression(entity *cronEntity, options *Options) *cronEntity {
+func normalizeExpression(entity *cronEntity, opts *options) *cronEntity {
 	//convert ? to * only for DOM and DOW
 	entity.DayOfMonth = strings.Replace(entity.DayOfMonth, "?", "*", -1)
 	entity.DayOfWeek = strings.Replace(entity.DayOfWeek, "?", "*", -1)
@@ -142,7 +142,7 @@ func normalizeExpression(entity *cronEntity, options *Options) *cronEntity {
 	}
 
 	//handle DayOfWeekStartIndexZero option where SUN=1 rather than SUN=0
-	if !options.DayOfWeekStartIndexZero {
+	if !opts.DayOfWeekStartIndexZero {
 		entity.DayOfWeek = decreaseDaysOfWeek(entity.DayOfWeek)
 	}
 

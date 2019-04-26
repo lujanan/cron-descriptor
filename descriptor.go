@@ -1,12 +1,13 @@
 package main
 
 import (
+	"cron-descriptor/locale"
 	"errors"
 	"fmt"
+	"golang.org/x/text/message"
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 var (
@@ -28,51 +29,72 @@ var (
 
 	specialCharactersList = []string{"/", "-", ",", "*"}
 	specialCharacters     = strings.Join(specialCharactersList, "")
-
-	parsed = false
 )
 
-func GetDescription(expression string, descriptionType int) string {
-	entity, err := parse(expression)
+type descriptor struct {
+	Expression string
+	Printer    *message.Printer
+	Options    *options
+}
+
+func DefaultDescription(expression string) string {
+	if expression == "" {
+		return ""
+	}
+
+	opts := NewDefaultOptions()
+	return NewDescriptor(expression, opts).GetDescription()
+}
+
+func NewDescriptor(expression string, opts *options) *descriptor {
+	printer := locale.NewPrinter(opts.Language)
+	return &descriptor{
+		Expression: expression,
+		Printer:    printer,
+		Options:    opts,
+	}
+}
+
+func (self *descriptor) GetDescription() string {
+	entity, err := parse(self)
 	if err != nil {
 		return err.Error()
 	}
-	//fmt.Println("cron struct:", entity)
 	description := ""
 
-	switch descriptionType {
+	switch self.Options.DescriptionType {
 	case DescFull:
-		description, err = getFullDescription(entity)
+		description, err = self.getFullDescription(entity)
 		if err != nil {
 			description = err.Error()
 		}
 
 	case DescTimeOfDay:
-		description, err = getTimeOfDayDescription(entity)
+		description, err = self.getTimeOfDayDescription(entity)
 		if err != nil {
 			description = err.Error()
 		}
 
 	case DescHours:
-		description = getHoursDescription(entity)
+		description = self.getHoursDescription(entity)
 
 	case DescMinutes:
-		description = getMinutesDescription(entity)
+		description = self.getMinutesDescription(entity)
 
 	case DescSeconds:
-		description = getSecondsDescription(entity)
+		description = self.getSecondsDescription(entity)
 
 	case DescDayOfMonth:
-		description = getDayOfMonthDescription(entity)
+		description = self.getDayOfMonthDescription(entity)
 
 	case DescMonth:
-		description = getMonthDescription(entity)
+		description = self.getMonthDescription(entity)
 
 	case DescDayOfWeek:
-		description = getDayOfWeekDescription(entity)
+		description = self.getDayOfWeekDescription(entity)
 
 	case DescYear:
-		description = getYearDescription(entity)
+		description = self.getYearDescription(entity)
 
 	default:
 		description = "error type"
@@ -81,29 +103,25 @@ func GetDescription(expression string, descriptionType int) string {
 	return description
 }
 
-func getFullDescription(entity *cronEntity) (string, error) {
-	timeSegment, err := getTimeOfDayDescription(entity)
+func (self *descriptor) getFullDescription(entity *cronEntity) (string, error) {
+	timeSegment, err := self.getTimeOfDayDescription(entity)
 	if err != nil {
 		return "", err
 	}
 
-	dayOfMonthDesc := getDayOfMonthDescription(entity)
-	//fmt.Println("dayOfMonthDesc:", dayOfMonthDesc)
-	monthDesc := getMonthDescription(entity)
-	//fmt.Println("monthDesc:", monthDesc)
-	dayOfWeekDesc := getDayOfWeekDescription(entity)
-	//fmt.Println("dayOfWeekDesc:", dayOfWeekDesc)
-	yearDesc := getYearDescription(entity)
-	//fmt.Println("yearDesc:", yearDesc)
+	dayOfMonthDesc := self.getDayOfMonthDescription(entity)
+	monthDesc := self.getMonthDescription(entity)
+	dayOfWeekDesc := self.getDayOfWeekDescription(entity)
+	yearDesc := self.getYearDescription(entity)
 
 	description := fmt.Sprintf("%s%s%s%s%s", timeSegment, dayOfMonthDesc, dayOfWeekDesc, monthDesc, yearDesc)
-	description = transformVerbosity(description, Verbose)
-	description = transformCase(description, CasingType)
+	description = self.transformVerbosity(description)
+	description = self.transformCase(description)
 
 	return description, nil
 }
 
-func getTimeOfDayDescription(entity *cronEntity) (string, error) {
+func (self *descriptor) getTimeOfDayDescription(entity *cronEntity) (string, error) {
 	secondsExp := entity.Seconds
 	minutesExp := entity.Minutes
 	hoursExp := entity.Hours
@@ -116,11 +134,11 @@ func getTimeOfDayDescription(entity *cronEntity) (string, error) {
 		!strings.ContainsAny(hoursExp, specialCharacters) {
 
 		//specific time of day (i.e. 10 14)
-		formatTimeStr, err := formatTime(hoursExp, minutesExp, secondsExp)
+		formatTimeStr, err := self.formatTime(hoursExp, minutesExp, secondsExp)
 		if err != nil {
 			return "", err
 		}
-		description = append(description, "At ", formatTimeStr)
+		description = append(description, self.Printer.Sprintf("At "), formatTimeStr)
 
 	} else if strings.Contains(minutesExp, "-") &&
 		!strings.Contains(minutesExp, ",") &&
@@ -128,15 +146,15 @@ func getTimeOfDayDescription(entity *cronEntity) (string, error) {
 
 		//minute range in single hour (i.e. 0-10 11)
 		minuteParts := strings.Split(minutesExp, "-")
-		minuteBtw0, err := formatTime(hoursExp, minuteParts[0], "")
+		minuteBtw0, err := self.formatTime(hoursExp, minuteParts[0], "")
 		if err != nil {
 			return "", err
 		}
-		minuteBtw1, err := formatTime(hoursExp, minuteParts[1], "")
+		minuteBtw1, err := self.formatTime(hoursExp, minuteParts[1], "")
 		if err != nil {
 			return "", err
 		}
-		description = append(description, fmt.Sprintf("Every minute between %s and %s", minuteBtw0, minuteBtw1))
+		description = append(description, self.Printer.Sprintf("Every minute between %s and %s", minuteBtw0, minuteBtw1))
 
 	} else if strings.Contains(hoursExp, ",") &&
 		!strings.Contains(hoursExp, "-") &&
@@ -145,9 +163,9 @@ func getTimeOfDayDescription(entity *cronEntity) (string, error) {
 		//hours list with single minute (o.e. 30 6,14,16)
 		hourParts := strings.Split(hoursExp, ",")
 		hourPartsLength := len(hourParts)
-		description = append(description, "At")
+		description = append(description, self.Printer.Sprintf("At"))
 		for i, hourPart := range hourParts {
-			hourFormat, err := formatTime(hourPart, minutesExp, "")
+			hourFormat, err := self.formatTime(hourPart, minutesExp, "")
 			if err != nil {
 				return "", err
 			}
@@ -156,18 +174,15 @@ func getTimeOfDayDescription(entity *cronEntity) (string, error) {
 				description = append(description, ",")
 			}
 			if i == (hourPartsLength - 2) {
-				description = append(description, " and")
+				description = append(description, self.Printer.Sprintf(" and"))
 			}
 		}
 
 	} else {
 		//default time description
-		secondsDescription := getSecondsDescription(entity)
-		//fmt.Println("secondsDescription:", secondsDescription)
-		minutesDescription := getMinutesDescription(entity)
-		//fmt.Println("minutesDescription:", minutesDescription)
-		hoursDescription := getHoursDescription(entity)
-		//fmt.Println("hoursDescription:", hoursDescription)
+		secondsDescription := self.getSecondsDescription(entity)
+		minutesDescription := self.getMinutesDescription(entity)
+		hoursDescription := self.getHoursDescription(entity)
 
 		if secondsDescription != "" {
 			description = append(description, secondsDescription)
@@ -191,18 +206,18 @@ func getTimeOfDayDescription(entity *cronEntity) (string, error) {
 	return strings.Join(description, ""), nil
 }
 
-func getSecondsDescription(entity *cronEntity) string {
+func (self *descriptor) getSecondsDescription(entity *cronEntity) string {
 	expression := entity.Seconds
-	fnAllDescription := func() string {
-		return "every second"
+	fnAllDescription := func(printer *message.Printer) string {
+		return printer.Sprintf("every second")
 	}
-	fnGetSingleItemDescription := func(s string) string {
+	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
 		return s
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf("every %s seconds", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf("every %s seconds", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -211,13 +226,13 @@ func getSecondsDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf("seconds %s through %s past the minute", objectList...)
+		return printer.Sprintf("seconds %s through %s past the minute", objectList...)
 	}
-	fnGetDescriptionFormat := func(_, s string) string {
-		return fmt.Sprintf("at %s seconds past the minute", s)
+	fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
+		return printer.Sprintf("at %s seconds past the minute", s)
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		expression,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -226,18 +241,18 @@ func getSecondsDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getMinutesDescription(entity *cronEntity) string {
+func (self *descriptor) getMinutesDescription(entity *cronEntity) string {
 	expression := entity.Minutes
-	fnAllDescription := func() string {
-		return "every minute"
+	fnAllDescription := func(printer *message.Printer) string {
+		return printer.Sprintf("every minute")
 	}
-	fnGetSingleItemDescription := func(s string) string {
+	fnGetSingleItemDescription := func(printer *message.Printer, s string) string {
 		return s
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf("every %s minutes", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf("every %s minutes", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -246,17 +261,17 @@ func getMinutesDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf("minutes %s through %s past the hour", objectList...)
+		return printer.Sprintf("minutes %s through %s past the hour", objectList...)
 	}
-	fnGetDescriptionFormat := func(_, s string) string {
+	fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
 		if s == "0" {
 			return ""
 		} else {
-			return fmt.Sprintf("at %s minutes past the hour", s)
+			return printer.Sprintf("at %s minutes past the hour", s)
 		}
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		expression,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -265,23 +280,23 @@ func getMinutesDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getHoursDescription(entity *cronEntity) string {
+func (self *descriptor) getHoursDescription(entity *cronEntity) string {
 	expression := entity.Hours
 
-	fnAllDescription := func() string {
-		return "every hour"
+	fnAllDescription := func(printer *message.Printer, ) string {
+		return printer.Sprintf("every hour")
 	}
-	fnGetSingleItemDescription := func(s string) string {
-		hourStr, err := formatTime(s, "0", "")
+	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
+		hourStr, err := self.formatTime(s, "0", "")
 		if err != nil {
 			hourStr = ""
 		}
 		return hourStr
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf("every %s hours", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf("every %s hours", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -290,13 +305,13 @@ func getHoursDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf("between %s and %s", objectList...)
+		return printer.Sprintf("between %s and %s", objectList...)
 	}
-	fnGetDescriptionFormat := func(_, s string) string {
-		return fmt.Sprintf("at %s", s)
+	fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
+		return printer.Sprintf("at %s", s)
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		expression,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -305,7 +320,7 @@ func getHoursDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getDayOfWeekDescription(entity *cronEntity) string {
+func (self *descriptor) getDayOfWeekDescription(entity *cronEntity) string {
 	if entity.DayOfWeek == "*" && entity.DayOfMonth != "*" {
 		return ""
 	}
@@ -322,7 +337,7 @@ func getDayOfWeekDescription(entity *cronEntity) string {
 		if err != nil {
 			return ""
 		}
-		return numberToDay(expNum)
+		return self.numberToDay(expNum)
 	}
 
 	getFormat := func(s string) string {
@@ -346,27 +361,27 @@ func getDayOfWeekDescription(entity *cronEntity) string {
 				dayOfWeekOfMonthDescription = choices[num]
 			}
 
-			formated = ", on the " + dayOfWeekOfMonthDescription + " %s of the month"
+			formated = self.Printer.Sprintf(", on the ") + self.Printer.Sprintf(dayOfWeekOfMonthDescription) + self.Printer.Sprintf(" %s of the month")
 
 		} else if strings.Contains(s, "L") {
-			formated = ", on the last %s of the month"
+			formated = self.Printer.Sprintf(", on the last %s of the month")
 
 		} else {
-			formated = ", only on %s"
+			formated = self.Printer.Sprintf(", only on %s")
 		}
 		return formated
 	}
 
-	fnAllDescription := func() string {
-		return ", every day"
+	fnAllDescription := func(printer *message.Printer) string {
+		return printer.Sprintf(", every day")
 	}
-	fnGetSingleItemDescription := func(s string) string {
+	fnGetSingleItemDescription := func(printer *message.Printer, s string) string {
 		return getDayName(s)
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf(", every %s days of the week", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf(", every %s days of the week", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -375,13 +390,14 @@ func getDayOfWeekDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf(", %s through %s", objectList...)
+		return printer.Sprintf(", %s through %s", objectList...)
 	}
-	fnGetDescriptionFormat := func(format, s string) string {
-		return fmt.Sprintf(getFormat(format), s)
+	fnGetDescriptionFormat := func(printer *message.Printer, format, s string) string {
+		fmt.Println(getFormat(format))
+		return printer.Sprintf(getFormat(format), s)
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		entity.DayOfWeek,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -390,21 +406,21 @@ func getDayOfWeekDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getMonthDescription(entity *cronEntity) string {
-	fnAllDescription := func() string {
+func (self *descriptor) getMonthDescription(entity *cronEntity) string {
+	fnAllDescription := func(_ *message.Printer) string {
 		return ""
 	}
-	fnGetSingleItemDescription := func(s string) string {
+	fnGetSingleItemDescription := func(printer *message.Printer, s string) string {
 		month, err := strconv.Atoi(s)
 		if err != nil || month < 1 || month > 12 {
 			return ""
 		}
 		return MonthName[month]
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf(", every %s months", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf(", every %s months", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -413,13 +429,13 @@ func getMonthDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf(", %s through %s", objectList...)
+		return printer.Sprintf(", %s through %s", objectList...)
 	}
-	fnGetDescriptionFormat := func(_, s string) string {
-		return fmt.Sprintf(", only in %s", s)
+	fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
+		return printer.Sprintf(", only in %s", s)
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		entity.Month,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -428,16 +444,16 @@ func getMonthDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getDayOfMonthDescription(entity *cronEntity) string {
+func (self *descriptor) getDayOfMonthDescription(entity *cronEntity) string {
 	expression := entity.DayOfMonth
 	expression = strings.Replace(expression, "?", "*", -1)
 	description := ""
 
 	if expression == "L" {
-		description = ", on the last day of the month"
+		description = self.Printer.Sprintf(", on the last day of the month")
 
 	} else if expression == "LW" || expression == "WL" {
-		description = ", on the last weekday of the month"
+		description = self.Printer.Sprintf(", on the last weekday of the month")
 
 	} else {
 		regexRule := regexp.MustCompile(`(\d{1,2}W)|(W\d{1,2})`)
@@ -446,28 +462,28 @@ func getDayOfMonthDescription(entity *cronEntity) string {
 			dayNum, err := strconv.Atoi(strings.Replace(expression, "W", "", -1))
 			if err == nil {
 				if dayNum == 1 {
-					dayString = "first weekday"
+					dayString = self.Printer.Sprintf("first weekday")
 				} else {
-					dayString = fmt.Sprintf("weekday nearest day %s", strconv.Itoa(dayNum))
+					dayString = self.Printer.Sprintf("weekday nearest day %s", strconv.Itoa(dayNum))
 				}
 			}
-			description = fmt.Sprintf(", on the %s of the month", dayString)
+			description = self.Printer.Sprintf(", on the %s of the month", dayString)
 
 		} else {
-			fnAllDescription := func() string {
-				return ", every day"
+			fnAllDescription := func(printer *message.Printer) string {
+				return printer.Sprintf(", every day")
 			}
-			fnGetSingleItemDescription := func(s string) string {
+			fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
 				return s
 			}
-			fnGetIntervalDescriptionFormat := func(format, s string) string {
+			fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, s string) string {
 				if format == "1" {
-					return ", every day"
+					return printer.Sprintf(", every day")
 				} else {
-					return fmt.Sprintf(", every %s days", s)
+					return printer.Sprintf(", every %s days", s)
 				}
 			}
-			fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+			fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 				maxParams := 2
 				objectList := make([]interface{}, 0)
 				for _, val := range s {
@@ -476,12 +492,12 @@ func getDayOfMonthDescription(entity *cronEntity) string {
 						break
 					}
 				}
-				return fmt.Sprintf(", between day %s and %s of the month", objectList...)
+				return printer.Sprintf(", between day %s and %s of the month", objectList...)
 			}
-			fnGetDescriptionFormat := func(_, s string) string {
-				return fmt.Sprintf(", on day %s of the month", s)
+			fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
+				return printer.Sprintf(", on day %s of the month", s)
 			}
-			description = getSegmentDescription(
+			description = self.getSegmentDescription(
 				expression,
 				fnAllDescription,
 				fnGetSingleItemDescription,
@@ -494,7 +510,7 @@ func getDayOfMonthDescription(entity *cronEntity) string {
 	return description
 }
 
-func getYearDescription(entity *cronEntity) string {
+func (self *descriptor) getYearDescription(entity *cronEntity) string {
 	formatYear := func(s string) string {
 		regexpRule := regexp.MustCompile(`^\d+$`)
 		if regexpRule.MatchString(s) {
@@ -509,16 +525,16 @@ func getYearDescription(entity *cronEntity) string {
 		}
 	}
 
-	fnAllDescription := func() string {
+	fnAllDescription := func(_ *message.Printer) string {
 		return ""
 	}
-	fnGetSingleItemDescription := func(s string) string {
+	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
 		return formatYear(s)
 	}
-	fnGetIntervalDescriptionFormat := func(format, _ string) string {
-		return fmt.Sprintf(", every %s years", format)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf(", every %s years", format)
 	}
-	fnGetBetweenDescriptionFormat := func(_ string, s ...string) string {
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
 		maxParams := 2
 		objectList := make([]interface{}, 0)
 		for _, val := range s {
@@ -527,13 +543,13 @@ func getYearDescription(entity *cronEntity) string {
 				break
 			}
 		}
-		return fmt.Sprintf(", %s through %s", objectList...)
+		return printer.Sprintf(", %s through %s", objectList...)
 	}
-	fnGetDescriptionFormat := func(_, s string) string {
-		return fmt.Sprintf(", only in %s", s)
+	fnGetDescriptionFormat := func(printer *message.Printer, _, s string) string {
+		return printer.Sprintf(", only in %s", s)
 	}
 
-	return getSegmentDescription(
+	return self.getSegmentDescription(
 		entity.Year,
 		fnAllDescription,
 		fnGetSingleItemDescription,
@@ -542,31 +558,31 @@ func getYearDescription(entity *cronEntity) string {
 		fnGetDescriptionFormat)
 }
 
-func getSegmentDescription(
+func (self *descriptor) getSegmentDescription(
 	expression string,
-	fnAllDescription func() string,
-	fnGetSingleItemDescription func(s string) string,
-	fnGetIntervalDescriptionFormat func(format, s string) string,
-	fnGetBetweenDescriptionFormat func(format string, s ... string) string,
-	fnGetDescriptionFormat func(format, s string) string,
+	fnAllDescription func(printer *message.Printer) string,
+	fnGetSingleItemDescription func(printer *message.Printer, s string) string,
+	fnGetIntervalDescriptionFormat func(printer *message.Printer, format, s string) string,
+	fnGetBetweenDescriptionFormat func(printer *message.Printer, format string, s ... string) string,
+	fnGetDescriptionFormat func(printer *message.Printer, format, s string) string,
 ) string {
 
 	description := ""
 	if expression == "" {
 
 	} else if expression == "*" {
-		description = fnAllDescription()
+		description = fnAllDescription(self.Printer)
 
 	} else if !strings.ContainsAny(expression, "/-,") {
-		description = fnGetDescriptionFormat(expression, fnGetSingleItemDescription(expression))
+		description = fnGetDescriptionFormat(self.Printer, expression, fnGetSingleItemDescription(self.Printer, expression))
 
 	} else if strings.Contains(expression, "/") {
 		segments := strings.Split(expression, "/")
-		description = fnGetIntervalDescriptionFormat(segments[1], fnGetSingleItemDescription(segments[1]))
+		description = fnGetIntervalDescriptionFormat(self.Printer, segments[1], fnGetSingleItemDescription(self.Printer, segments[1]))
 
 		//interval contains 'between' piece (i.e. 2-59/3 )
 		if strings.Contains(segments[0], "-") {
-			betweenSegmentDescription := generateBetweenSegmentDescription(segments[0], fnGetBetweenDescriptionFormat, fnGetSingleItemDescription)
+			betweenSegmentDescription := self.generateBetweenSegmentDescription(segments[0], fnGetBetweenDescriptionFormat, fnGetSingleItemDescription)
 			if !regexp.MustCompile(`^(,\s)`).MatchString(betweenSegmentDescription) {
 				// not start with ", "
 				description += ", "
@@ -574,9 +590,9 @@ func getSegmentDescription(
 			description += betweenSegmentDescription
 
 		} else if !strings.ContainsAny(segments[0], "*,") {
-			rangeItemDescription := fnGetDescriptionFormat(segments[0], fnGetSingleItemDescription(segments[0]))
+			rangeItemDescription := fnGetDescriptionFormat(self.Printer, segments[0], fnGetSingleItemDescription(self.Printer, segments[0]))
 			rangeItemDescription = strings.Replace(rangeItemDescription, ", ", "", -1)
-			description += fmt.Sprintf(", starting %s", rangeItemDescription)
+			description += self.Printer.Sprintf(", starting %s", rangeItemDescription)
 		}
 
 	} else if strings.Contains(expression, ",") {
@@ -593,13 +609,13 @@ func getSegmentDescription(
 			}
 
 			if i > 0 && segmentsLength > 1 && (i == (segmentsLength-1) || segmentsLength == 2) {
-				descriptionContent += " and "
+				descriptionContent += self.Printer.Sprintf(" and ")
 			}
 
 			if strings.Contains(segment, "-") {
-				betweenDescription := generateBetweenSegmentDescription(
+				betweenDescription := self.generateBetweenSegmentDescription(
 					segment,
-					func(_ string, s ...string) string {
+					func(printer *message.Printer, _ string, s ...string) string {
 						maxParams := 2
 						objectList := make([]interface{}, 0)
 						for _, val := range s {
@@ -608,43 +624,42 @@ func getSegmentDescription(
 								break
 							}
 						}
-						return fmt.Sprintf(", %s through %s", objectList...)
+						return printer.Sprintf(", %s through %s", objectList...)
 					},
 					fnGetSingleItemDescription)
 				betweenDescription = strings.Replace(betweenDescription, ", ", "", -1)
 				descriptionContent += betweenDescription
 
 			} else {
-				descriptionContent += fnGetSingleItemDescription(segment)
+				descriptionContent += fnGetSingleItemDescription(self.Printer, segment)
 			}
 		}
 
-		description = fnGetDescriptionFormat(expression, descriptionContent)
+		description = fnGetDescriptionFormat(self.Printer, expression, descriptionContent)
 
 	} else if strings.Contains(expression, "-") {
-		description = generateBetweenSegmentDescription(expression, fnGetBetweenDescriptionFormat, fnGetSingleItemDescription)
+		description = self.generateBetweenSegmentDescription(expression, fnGetBetweenDescriptionFormat, fnGetSingleItemDescription)
 	}
 
-	//fmt.Println("description:", description)
 	return description
 }
 
-func generateBetweenSegmentDescription(
+func (self *descriptor) generateBetweenSegmentDescription(
 	betweenExpression string,
-	fnGetBetweenDescritionFormat func(format string, s ...string) string,
-	fnGetSingleItemDescription func(s string) string,
+	fnGetBetweenDescritionFormat func(printer *message.Printer, format string, s ...string) string,
+	fnGetSingleItemDescription func(printer *message.Printer, s string) string,
 ) string {
 	description := ""
 	betweenSegments := strings.Split(betweenExpression, "-")
-	betweenSegment1Description := fnGetSingleItemDescription(betweenSegments[0])
-	betweenSegment2Description := fnGetSingleItemDescription(betweenSegments[1])
+	betweenSegment1Description := fnGetSingleItemDescription(self.Printer, betweenSegments[0])
+	betweenSegment2Description := fnGetSingleItemDescription(self.Printer, betweenSegments[1])
 	betweenSegment2Description = strings.Replace(betweenSegment2Description, ":00", ":59", -1)
 
-	description += fnGetBetweenDescritionFormat(betweenExpression, betweenSegment1Description, betweenSegment2Description)
+	description += fnGetBetweenDescritionFormat(self.Printer, betweenExpression, betweenSegment1Description, betweenSegment2Description)
 	return description
 }
 
-func formatTime(hourExp, minuteExp, secondsExp string) (string, error) {
+func (self *descriptor) formatTime(hourExp, minuteExp, secondsExp string) (string, error) {
 	hour, err := strconv.Atoi(hourExp)
 	if err != nil {
 		return "", err
@@ -654,7 +669,7 @@ func formatTime(hourExp, minuteExp, secondsExp string) (string, error) {
 	}
 
 	period := ""
-	if !Use24hourTimeFormat {
+	if !self.Options.Use24hourTimeFormat {
 		if hour >= 12 {
 			period = " PM"
 		} else {
@@ -690,22 +705,21 @@ func formatTime(hourExp, minuteExp, secondsExp string) (string, error) {
 	return fmt.Sprintf("%s:%s%s%s", hourExp, minuteExp, secondsExp, period), nil
 }
 
-func transformVerbosity(description string, useVerboseFormat bool) string {
-	if !useVerboseFormat {
-		description = strings.Replace(description, ", every minute", "", -1)
-		description = strings.Replace(description, ", every hour", "", -1)
-		description = strings.Replace(description, ", every day", "", -1)
+func (self *descriptor) transformVerbosity(description string) string {
+	if !self.Options.Verbose {
+		description = strings.Replace(description, self.Printer.Sprintf(", every minute"), "", -1)
+		description = strings.Replace(description, self.Printer.Sprintf(", every hour"), "", -1)
+		description = strings.Replace(description, self.Printer.Sprintf(", every day"), "", -1)
 	}
 	return description
 }
 
-func transformCase(description string, caseType int) string {
-	switch caseType {
+func (self *descriptor) transformCase(description string) string {
+	switch self.Options.CasingType {
 	case CasingSentence:
-		for i, v := range description {
-			description = string(unicode.ToUpper(v)) + description[i+1:]
-			break
-		}
+		descriptionParts := strings.Split(description, " ")
+		descriptionParts[0] = strings.Title(descriptionParts[0])
+		description = strings.Join(descriptionParts, " ")
 
 	case CasingTitle:
 		description = strings.Title(description)
@@ -716,9 +730,9 @@ func transformCase(description string, caseType int) string {
 	return description
 }
 
-func numberToDay(dayNumber int) string {
+func (self *descriptor) numberToDay(dayNumber int) string {
 	if dayNumber < 0 || dayNumber >= len(WeekDayName) {
 		return ""
 	}
-	return WeekDayName[dayNumber]
+	return self.Printer.Sprintf(WeekDayName[dayNumber])
 }

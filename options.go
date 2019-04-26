@@ -1,21 +1,23 @@
 package main
 
-type Options struct {
-	ThrowExceptionOnParseError bool
-	CasingType                 int
-	Verbose                    bool
-	DayOfWeekStartIndexZero    bool
-	Use24hourTimeFormat        bool
+import "cron-descriptor/locale"
+
+type options struct {
+	DescriptionType         int
+	CasingType              int
+	Verbose                 bool
+	DayOfWeekStartIndexZero bool
+	Use24hourTimeFormat     bool
+	Language                int
 }
 
-var options *Options
-
-func init() {
-	options = &Options{
-		ThrowExceptionOnParseError: false,
-		CasingType:                 CasingSentence,
-		Verbose:                    false,
-		DayOfWeekStartIndexZero:    true,
-		Use24hourTimeFormat:        false,
+func NewDefaultOptions() *options {
+	return &options{
+		DescriptionType:         DescFull,
+		CasingType:              CasingSentence,
+		Verbose:                 false,
+		DayOfWeekStartIndexZero: true,
+		Use24hourTimeFormat:     false,
+		Language:                locale.EN_US,
 	}
 }
