@@ -53,7 +53,7 @@ func TestDescriptor_GetDescription(t *testing.T) {
 	desc := NewDescriptor(cron, opts)
 	d := desc.GetDescription()
 	fmt.Println(d)
-	return
+	//return
 
 	cronList := []string{
 		"0 1 */4 * * *",

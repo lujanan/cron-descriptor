@@ -325,7 +325,10 @@ func (self *descriptor) getDayOfWeekDescription(entity *cronEntity) string {
 		return ""
 	}
 
-	getDayName := func(s string) string {
+	fnAllDescription := func(printer *message.Printer) string {
+		return printer.Sprintf(", every day")
+	}
+	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
 		exp := s
 		if strings.Contains(s, "#") {
 			expList := strings.SplitN(s, "#", 2)
@@ -339,11 +342,23 @@ func (self *descriptor) getDayOfWeekDescription(entity *cronEntity) string {
 		}
 		return self.numberToDay(expNum)
 	}
-
-	getFormat := func(s string) string {
-		formated := ""
-		if strings.Contains(s, "#") {
-			dayOfWeekOfMonthList := strings.SplitN(s, "#", 2)
+	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
+		return printer.Sprintf(", every %s days of the week", format)
+	}
+	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
+		maxParams := 2
+		objectList := make([]interface{}, 0)
+		for _, val := range s {
+			objectList = append(objectList, val)
+			if len(objectList) >= maxParams {
+				break
+			}
+		}
+		return printer.Sprintf(", %s through %s", objectList...)
+	}
+	fnGetDescriptionFormat := func(printer *message.Printer, format, s string) string {
+		if strings.Contains(format, "#") {
+			dayOfWeekOfMonthList := strings.SplitN(format, "#", 2)
 			dayOfWeekOfMonth := ""
 			dayOfWeekOfMonthDescription := ""
 			if len(dayOfWeekOfMonthList) == 2 {
@@ -361,40 +376,14 @@ func (self *descriptor) getDayOfWeekDescription(entity *cronEntity) string {
 				dayOfWeekOfMonthDescription = choices[num]
 			}
 
-			formated = self.Printer.Sprintf(", on the ") + self.Printer.Sprintf(dayOfWeekOfMonthDescription) + self.Printer.Sprintf(" %s of the month")
+			return printer.Sprintf(", on the ") + printer.Sprintf(dayOfWeekOfMonthDescription) + printer.Sprintf(" %s of the month", s)
 
-		} else if strings.Contains(s, "L") {
-			formated = self.Printer.Sprintf(", on the last %s of the month")
+		} else if strings.Contains(format, "L") {
+			return printer.Sprintf(", on the last %s of the month", s)
 
 		} else {
-			formated = self.Printer.Sprintf(", only on %s")
+			return printer.Sprintf(", only on %s", s)
 		}
-		return formated
-	}
-
-	fnAllDescription := func(printer *message.Printer) string {
-		return printer.Sprintf(", every day")
-	}
-	fnGetSingleItemDescription := func(printer *message.Printer, s string) string {
-		return getDayName(s)
-	}
-	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
-		return printer.Sprintf(", every %s days of the week", format)
-	}
-	fnGetBetweenDescriptionFormat := func(printer *message.Printer, _ string, s ...string) string {
-		maxParams := 2
-		objectList := make([]interface{}, 0)
-		for _, val := range s {
-			objectList = append(objectList, val)
-			if len(objectList) >= maxParams {
-				break
-			}
-		}
-		return printer.Sprintf(", %s through %s", objectList...)
-	}
-	fnGetDescriptionFormat := func(printer *message.Printer, format, s string) string {
-		fmt.Println(getFormat(format))
-		return printer.Sprintf(getFormat(format), s)
 	}
 
 	return self.getSegmentDescription(
@@ -511,7 +500,11 @@ func (self *descriptor) getDayOfMonthDescription(entity *cronEntity) string {
 }
 
 func (self *descriptor) getYearDescription(entity *cronEntity) string {
-	formatYear := func(s string) string {
+
+	fnAllDescription := func(_ *message.Printer) string {
+		return ""
+	}
+	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
 		regexpRule := regexp.MustCompile(`^\d+$`)
 		if regexpRule.MatchString(s) {
 			year, err := strconv.Atoi(s)
@@ -523,13 +516,6 @@ func (self *descriptor) getYearDescription(entity *cronEntity) string {
 		} else {
 			return s
 		}
-	}
-
-	fnAllDescription := func(_ *message.Printer) string {
-		return ""
-	}
-	fnGetSingleItemDescription := func(_ *message.Printer, s string) string {
-		return formatYear(s)
 	}
 	fnGetIntervalDescriptionFormat := func(printer *message.Printer, format, _ string) string {
 		return printer.Sprintf(", every %s years", format)
